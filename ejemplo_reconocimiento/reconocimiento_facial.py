@@ -1,7 +1,7 @@
 import cv2
 import os
 
-dataPath = 'C:/Users/elias/OneDrive/Desktop/Proyecto_reconocimiento/Datos' #Cambia a la ruta donde hayas almacenado Data
+dataPath = 'C:/Users/Juan Jose/Desktop/Reconociemiento Facial/proyecto_reco_facial/Datos' #Cambia a la ruta donde hayas almacenado Data
 imagePaths = os.listdir(dataPath)
 print('imagePaths=',imagePaths)
 
