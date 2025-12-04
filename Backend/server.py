@@ -3,6 +3,7 @@ from flask_cors import CORS
 import os
 import time
 import cv2
+import numpy as np
 
 app = Flask(__name__)
 CORS(app)
@@ -13,6 +14,9 @@ OUTPUT_FOLDER = 'Datos/'
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# Contador de fotos para reentrenar automáticamente
+foto_counter = {}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -55,8 +59,61 @@ def process_face_image(image_path, person_name):
 
     return processed_paths
 
+
+def entrenar_modelo_automatico():
+    """
+    Entrena el modelo LBPH automáticamente después de registrar fotos
+    """
+    try:
+        data_path = OUTPUT_FOLDER
+        people_list = [d for d in os.listdir(data_path) if os.path.isdir(os.path.join(data_path, d))]
+        
+        if len(people_list) == 0:
+            print("⚠ No hay personas registradas para entrenar")
+            return False
+        
+        print(f"\n🔄 Entrenando modelo con {len(people_list)} personas...")
+
+        labels = []
+        faces_data = []
+        label = 0
+
+        for person in people_list:
+            person_path = os.path.join(data_path, person)
+            
+            for file_name in os.listdir(person_path):
+                file_path = os.path.join(person_path, file_name)
+                
+                image = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
+                
+                if image is None:
+                    continue
+                
+                faces_data.append(image)
+                labels.append(label)
+            
+            label += 1
+
+        if len(faces_data) == 0:
+            print("⚠ No se encontraron imágenes para entrenar")
+            return False
+
+        labels = np.array(labels)
+        
+        face_recognizer = cv2.face.LBPHFaceRecognizer_create()
+        face_recognizer.train(faces_data, labels)
+        face_recognizer.write('modeloLBPHFace.xml')
+        
+        print(f"✅ Modelo entrenado exitosamente con {len(faces_data)} imágenes")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error entrenando modelo: {str(e)}")
+        return False
+
+
 # -------------------------
-#   ENDPOINT PRINCIPAL
+#   ENDPOINT REGISTRO
 # -------------------------
 @app.route('/registrar_foto', methods=['POST'])
 def registrar_foto():
@@ -86,14 +143,27 @@ def registrar_foto():
     if not processed:
         return jsonify({"error": "No se detectó rostro"}), 400
 
+    # Contador de fotos por persona
+    if nombre not in foto_counter:
+        foto_counter[nombre] = 0
+    
+    foto_counter[nombre] += 1
+    
+    # Entrenar automáticamente cada 50 fotos o cuando llegue a 300
+    if foto_counter[nombre] % 50 == 0 or foto_counter[nombre] >= 300:
+        print(f"\n🎯 {nombre} tiene {foto_counter[nombre]} fotos. Reentrenando modelo...")
+        entrenar_modelo_automatico()
+
     return jsonify({
         "message": "Rostro procesado correctamente",
-        "saved_files": processed
+        "saved_files": processed,
+        "total_fotos": foto_counter[nombre]
     }), 200
-# -------------------------
-#   ENDPOINT Para reconocer rostro
-# -------------------------
 
+
+# -------------------------
+#   ENDPOINT RECONOCIMIENTO
+# -------------------------
 @app.route('/reconocer_rostro', methods=['POST'])
 def reconocer_rostro():
     
@@ -113,6 +183,10 @@ def reconocer_rostro():
     print("📸 Imagen recibida para reconocimiento:", filepath)
 
     try:
+        # Verificar que existe el modelo
+        if not os.path.exists('modeloLBPHFace.xml'):
+            return jsonify({"error": "Modelo no entrenado. Registra personas primero."}), 400
+        
         # Cargar el modelo LBPH
         face_recognizer = cv2.face.LBPHFaceRecognizer_create()
         face_recognizer.read('modeloLBPHFace.xml')
@@ -135,8 +209,8 @@ def reconocer_rostro():
             return jsonify({"error": "No se detectó rostro"}), 200
         
         # Obtener carpetas de personas
-        dataPath = 'Datos'
-        imagePaths = os.listdir(dataPath)
+        dataPath = OUTPUT_FOLDER
+        imagePaths = [d for d in os.listdir(dataPath) if os.path.isdir(os.path.join(dataPath, d))]
         
         for (x, y, w, h) in faces:
             rostro = gray[y:y+h, x:x+w]
@@ -165,6 +239,23 @@ def reconocer_rostro():
         # Limpiar archivo temporal
         if os.path.exists(filepath):
             os.remove(filepath)
+
+
+# -------------------------
+#   ENDPOINT ENTRENAR MANUAL
+# -------------------------
+@app.route('/entrenar_modelo', methods=['POST'])
+def entrenar_modelo_endpoint():
+    """
+    Endpoint para entrenar el modelo manualmente si es necesario
+    """
+    success = entrenar_modelo_automatico()
+    
+    if success:
+        return jsonify({"message": "Modelo entrenado exitosamente"}), 200
+    else:
+        return jsonify({"error": "Error al entrenar el modelo"}), 500
+
 
 # -------------------------
 #    INICIAR SERVIDOR
