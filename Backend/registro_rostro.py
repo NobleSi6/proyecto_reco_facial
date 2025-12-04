@@ -1,40 +1,59 @@
 import cv2
 import os
-import imutils
+import numpy as np
 
-personName = input("Ingrese su nombre: ")
-dataPath = 'C:/Users/elias/OneDrive/Desktop/Proyecto_reconocimiento/Datos' #Cambia a la ruta donde hayas almacenado Data
-personPath = dataPath + '/' + personName
+def entrenar_modelo(data_path="Datos", output_model="modeloLBPHFace.xml"):
+    """
+    Entrena un modelo LBPH con las imágenes almacenadas en Datos/<persona>/.
+    Cada carpeta es una etiqueta (persona).
+    """
 
-if not os.path.exists(personPath):
-	print('Carpeta creada: ',personPath)
-	os.makedirs(personPath)
+    people_list = os.listdir(data_path)
+    print("Personas encontradas:", people_list)
 
-cap = cv2.VideoCapture(0,cv2.CAP_DSHOW)
-faceClassif = cv2.CascadeClassifier(cv2.data.haarcascades+'haarcascade_frontalface_default.xml')
-count = 0
+    labels = []
+    faces_data = []
+    label = 0
 
-while True:
+    for person in people_list:
+        person_path = os.path.join(data_path, person)
 
-	ret, frame = cap.read()
-	if ret == False: break
-	frame =  imutils.resize(frame, width=640)
-	gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-	auxFrame = frame.copy()
+        print("\nProcesando imágenes de:", person)
 
-	faces = faceClassif.detectMultiScale(gray,1.3,5)
+        for file_name in os.listdir(person_path):
+            file_path = os.path.join(person_path, file_name)
 
-	for (x,y,w,h) in faces:
-		cv2.rectangle(frame, (x,y),(x+w,y+h),(0,255,0),2)
-		rostro = auxFrame[y:y+h,x:x+w]
-		rostro = cv2.resize(rostro,(150,150),interpolation=cv2.INTER_CUBIC)
-		cv2.imwrite(personPath + '/rotro_{}.jpg'.format(count),rostro)
-		count = count + 1
-	cv2.imshow('frame',frame)
+            # Cargar la imagen en tamaño 150x150
+            image = cv2.imread(file_path, cv2.IMREAD_GRAYSCALE)
 
-	k =  cv2.waitKey(1)
-	if k == 27 or count >= 300:
-		break
+            if image is None:
+                print("⚠ Imagen dañada o incompatible:", file_path)
+                continue
 
-cap.release()
-cv2.destroyAllWindows()
+            faces_data.append(image)
+            labels.append(label)
+
+        label += 1
+
+    print("\nTotal de imágenes:", len(faces_data))
+    print("Total de etiquetas:", len(labels))
+
+    # Convertir listas a arrays
+    labels = np.array(labels)
+
+    # Crear el modelo LBPH
+    face_recognizer = cv2.face.LBPHFaceRecognizer_create()
+
+    print("\nEntrenando modelo LBPH, por favor espera...")
+    face_recognizer.train(faces_data, labels)
+
+    # Guardar el modelo
+    face_recognizer.write(output_model)
+
+    print("\n✔ Entrenamiento completado.")
+    print(f"Modelo guardado como: {output_model}")
+
+
+if __name__ == "__main__":
+    # Entrena el modelo usando las imágenes procesadas del servidor
+    entrenar_modelo()

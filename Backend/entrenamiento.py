@@ -2,7 +2,7 @@ import cv2
 import os
 import numpy as np
 
-dataPath = 'C:/Users/elias/OneDrive/Desktop/Proyecto_reconocimiento/Datos' #Cambia a la ruta donde hayas almacenado Data
+dataPath = 'C:/Users/elias/OneDrive/Desktop/proyecto_reco_facial-main/proyecto_reco_facial-main/Datos' #Cambia a la ruta donde hayas almacenado Data
 peopleList = os.listdir(dataPath)
 print('Lista de personas: ', peopleList)
 

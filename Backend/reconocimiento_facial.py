@@ -1,68 +1,54 @@
 import cv2
 import os
 
-dataPath = 'C:/Users/elias/OneDrive/Desktop/Proyecto_reconocimiento/Datos' #Cambia a la ruta donde hayas almacenado Data
+# Ruta donde está la carpeta Datos
+dataPath = 'C:/Users/elias/OneDrive/Desktop/proyecto_reco_facial-main/proyecto_reco_facial-main/Datos'
 imagePaths = os.listdir(dataPath)
-print('imagePaths=',imagePaths)
 
-#face_recognizer = cv2.face.EigenFaceRecognizer_create()
-#face_recognizer = cv2.face.FisherFaceRecognizer_create()
+# Cargar reconocedor LBPH
 face_recognizer = cv2.face.LBPHFaceRecognizer_create()
-
-# Leyendo el modelo
-#face_recognizer.read('modeloEigenFace.xml')
-#face_recognizer.read('modeloFisherFace.xml')
 face_recognizer.read('modeloLBPHFace.xml')
 
-#cap = cv2.VideoCapture(0,cv2.CAP_DSHOW)
-#cap = cv2.VideoCapture('Video.mp4')
+# Cargar clasificador Haar Cascade
+faceClassif = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
-faceClassif = cv2.CascadeClassifier(cv2.data.haarcascades+'haarcascade_frontalface_default.xml')
-cap = cv2.VideoCapture(0)
 
-while True:
-	ret,frame = cap.read()
-	if ret == False: break
-	gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-	auxFrame = gray.copy()
+def reconocer_rostro():
+    """
+    Captura un solo cuadro de la cámara,
+    detecta un rostro y devuelve el nombre reconocido.
+    """
 
-	faces = faceClassif.detectMultiScale(gray,1.3,5)
+    cap = cv2.VideoCapture(0)
 
-	for (x,y,w,h) in faces:
-		rostro = auxFrame[y:y+h,x:x+w]
-		rostro = cv2.resize(rostro,(150,150),interpolation= cv2.INTER_CUBIC)
-		result = face_recognizer.predict(rostro)
+    if not cap.isOpened():
+        return "Error: No se pudo acceder a la cámara"
 
-		cv2.putText(frame,'{}'.format(result),(x,y-5),1,1.3,(255,255,0),1,cv2.LINE_AA)
-		'''
-		# EigenFaces
-		if result[1] < 5700:
-			cv2.putText(frame,'{}'.format(imagePaths[result[0]]),(x,y-25),2,1.1,(0,255,0),1,cv2.LINE_AA)
-			cv2.rectangle(frame, (x,y),(x+w,y+h),(0,255,0),2)
-		else:
-			cv2.putText(frame,'Desconocido',(x,y-20),2,0.8,(0,0,255),1,cv2.LINE_AA)
-			cv2.rectangle(frame, (x,y),(x+w,y+h),(0,0,255),2)
-		
-		# FisherFace
-		if result[1] < 500:
-			cv2.putText(frame,'{}'.format(imagePaths[result[0]]),(x,y-25),2,1.1,(0,255,0),1,cv2.LINE_AA)
-			cv2.rectangle(frame, (x,y),(x+w,y+h),(0,255,0),2)
-		else:
-			cv2.putText(frame,'Desconocido',(x,y-20),2,0.8,(0,0,255),1,cv2.LINE_AA)
-			cv2.rectangle(frame, (x,y),(x+w,y+h),(0,0,255),2)
-		'''
-		# LBPHFace
-		if result[1] < 70:
-			cv2.putText(frame,'{}'.format(imagePaths[result[0]]),(x,y-25),2,1.1,(0,255,0),1,cv2.LINE_AA)
-			cv2.rectangle(frame, (x,y),(x+w,y+h),(0,255,0),2)
-		else:
-			cv2.putText(frame,'Desconocido',(x,y-20),2,0.8,(0,0,255),1,cv2.LINE_AA)
-			cv2.rectangle(frame, (x,y),(x+w,y+h),(0,0,255),2)
-		
-	cv2.imshow('frame',frame)
-	k = cv2.waitKey(1)
-	if k == 27:
-		break
+    ret, frame = cap.read()
+    cap.release()
 
-cap.release()
-cv2.destroyAllWindows()
+    if not ret:
+        return "Error al capturar imagen"
+
+    # Procesar imagen
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = faceClassif.detectMultiScale(gray, 1.3, 5)
+
+    # Si no encuentra rostros:
+    if len(faces) == 0:
+        return "No se detectó rostro"
+
+    for (x, y, w, h) in faces:
+        rostro = gray[y:y+h, x:x+w]
+        rostro = cv2.resize(rostro, (150,150), interpolation=cv2.INTER_CUBIC)
+
+        result = face_recognizer.predict(rostro)
+        label, confidence = result
+
+        # LBPH threshold recomendado: 70
+        if confidence < 70:
+            return imagePaths[label]
+        else:
+            return "Desconocido"
+
+    return "No se pudo procesar el rostro"
