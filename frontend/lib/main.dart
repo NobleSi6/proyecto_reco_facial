@@ -63,7 +63,7 @@ class MainMenuPage extends StatelessWidget {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const AttendanceListPage()),
+                  MaterialPageRoute(builder: (_) => AttendanceListPage()),
                 );
               },
               child: const Text("Ver lista de asistencia"),

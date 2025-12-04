@@ -19,14 +19,26 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
   Timer? captureTimer;
   bool isProcessing = false;
 
-  final String serverUrl = kIsWeb
+  // Lista de personas registradas
+  List<String> personasRegistradas = [];
+
+  // Mapa para guardar estado de presencia
+  Map<String, String> estadoPersonas = {};
+
+  // URLs del servidor
+  final String reconocerUrl = kIsWeb
       ? "http://127.0.0.1:8000/reconocer"
-      : "http://10.0.2.2:8000/reconocer"; // Android usa localhost diferente
+      : "http://10.0.2.2:8000/reconocer";
+
+  final String personasUrl = kIsWeb
+      ? "http://127.0.0.1:8000/personas"
+      : "http://10.0.2.2:8000/personas";
 
   @override
   void initState() {
     super.initState();
     initCamera();
+    cargarPersonas();
   }
 
   @override
@@ -36,17 +48,47 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
     super.dispose();
   }
 
+  // ========================
+  //   Cargar lista personas
+  // ========================
+  Future<void> cargarPersonas() async {
+    try {
+      final response = await http.get(Uri.parse(personasUrl));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        setState(() {
+          personasRegistradas = List<String>.from(data["personas"]);
+
+          // Todas empiezan ausentes, excepto las ya marcadas
+          for (var persona in personasRegistradas) {
+            estadoPersonas.putIfAbsent(persona, () => "Ausente");
+          }
+        });
+      }
+    } catch (e) {
+      print("❌ Error al cargar personas: $e");
+    }
+  }
+
+  // ========================
+  //   Inicializar cámara
+  // ========================
   Future<void> initCamera() async {
     try {
       cameras = await availableCameras();
+
       if (cameras!.isNotEmpty) {
         controller = CameraController(cameras!.first, ResolutionPreset.medium);
         await controller!.initialize();
+
         setState(() {});
 
-        // Captura automática cada 5 segundos
         captureTimer = Timer.periodic(
-            const Duration(seconds: 5), (_) => captureAndRecognize());
+          const Duration(seconds: 5),
+          (_) => captureAndRecognize(),
+        );
       } else {
         setState(() => recognizedName = "No se encontró cámara.");
       }
@@ -55,6 +97,9 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
     }
   }
 
+  // ========================
+  //   Capturar y reconocer
+  // ========================
   Future<void> captureAndRecognize() async {
     if (controller == null || !controller!.value.isInitialized || isProcessing) return;
 
@@ -62,16 +107,14 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
 
     try {
       XFile file = await controller!.takePicture();
-
       Uint8List imageBytes = await file.readAsBytes();
-      String fileName = "${DateTime.now().millisecondsSinceEpoch}.jpg";
 
-      var request = http.MultipartRequest("POST", Uri.parse(serverUrl));
+      var request = http.MultipartRequest("POST", Uri.parse(reconocerUrl));
       request.files.add(
         http.MultipartFile.fromBytes(
           "imagen",
           imageBytes,
-          filename: fileName,
+          filename: "${DateTime.now().millisecondsSinceEpoch}.jpg",
           contentType: MediaType("image", "jpeg"),
         ),
       );
@@ -79,16 +122,21 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
       var response = await request.send();
 
       if (response.statusCode == 200) {
-        final respStr = await response.stream.bytesToString();
-        var data = json.decode(respStr);
+        final body = await response.stream.bytesToString();
+        var data = json.decode(body);
+        String nombreReconocido = data["nombre"] ?? "Desconocido";
 
         setState(() {
-          recognizedName = data["nombre"] ?? "Desconocido";
+          recognizedName = nombreReconocido;
+
+          // 🔥 SOLO MARCA PRESENTE AL RECONOCIDO
+          // NO CAMBIA EL ESTADO DE LOS DEMÁS
+          if (personasRegistradas.contains(nombreReconocido)) {
+            estadoPersonas[nombreReconocido] = "Presente";
+          }
         });
       } else {
-        setState(() {
-          recognizedName = "No identificado";
-        });
+        setState(() => recognizedName = "No identificado");
       }
     } catch (e) {
       setState(() => recognizedName = "Error: $e");
@@ -97,6 +145,9 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
     setState(() => isProcessing = false);
   }
 
+  // ========================
+  //           UI
+  // ========================
   @override
   Widget build(BuildContext context) {
     if (controller == null || !controller!.value.isInitialized) {
@@ -108,24 +159,92 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
 
     return Scaffold(
       appBar: AppBar(title: Text("Reconocer Rostro")),
-      body: Stack(
+      body: Row(
         children: [
-          CameraPreview(controller!),
-          Positioned(
-            bottom: 50,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(10),
+          // 📸 Cámara
+          Expanded(
+            flex: 3,
+            child: Stack(
+              children: [
+                CameraPreview(controller!),
+                Positioned(
+                  bottom: 50,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        isProcessing ? "Procesando..." : recognizedName,
+                        style: TextStyle(color: Colors.white, fontSize: 22),
+                      ),
+                    ),
+                  ),
                 ),
-                child: Text(
-                  isProcessing ? "Procesando..." : recognizedName,
-                  style: TextStyle(color: Colors.white, fontSize: 22),
-                ),
+              ],
+            ),
+          ),
+
+          // 📋 Lista personas + estado
+          Expanded(
+            flex: 1,
+            child: Container(
+              color: Colors.black,
+              child: Column(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(12),
+                    color: Color.fromARGB(255, 48, 44, 92),
+                    width: double.infinity,
+                    child: Text(
+                      "Personas Registradas",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+
+                  TextButton.icon(
+                    onPressed: cargarPersonas,
+                    icon: Icon(Icons.refresh, color: Colors.white),
+                    label: Text("Actualizar", style: TextStyle(color: Colors.white)),
+                  ),
+
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: personasRegistradas.length,
+                      itemBuilder: (context, index) {
+                        String persona = personasRegistradas[index];
+                        String estado = estadoPersonas[persona] ?? "Ausente";
+
+                        return ListTile(
+                          leading: Icon(
+                            Icons.person,
+                            color: estado == "Presente" ? Colors.green : Colors.red,
+                          ),
+                          title: Text(
+                            persona,
+                            style: TextStyle(color: Colors.white),
+                          ),
+                          trailing: Text(
+                            estado,
+                            style: TextStyle(
+                              color: estado == "Presente" ? Colors.green : Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
