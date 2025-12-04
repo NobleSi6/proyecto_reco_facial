@@ -90,7 +90,81 @@ def registrar_foto():
         "message": "Rostro procesado correctamente",
         "saved_files": processed
     }), 200
+# -------------------------
+#   ENDPOINT Para reconocer rostro
+# -------------------------
 
+@app.route('/reconocer_rostro', methods=['POST'])
+def reconocer_rostro():
+    
+    if 'imagen' not in request.files:
+        return jsonify({"error": "No se recibió ninguna imagen"}), 400
+
+    imagen = request.files['imagen']
+
+    if not allowed_file(imagen.filename):
+        return jsonify({"error": "Formato no permitido"}), 400
+
+    # Guardar foto temporalmente
+    filename = f"temp_{int(time.time()*1000)}_{imagen.filename}"
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    imagen.save(filepath)
+
+    print("📸 Imagen recibida para reconocimiento:", filepath)
+
+    try:
+        # Cargar el modelo LBPH
+        face_recognizer = cv2.face.LBPHFaceRecognizer_create()
+        face_recognizer.read('modeloLBPHFace.xml')
+        
+        # Cargar clasificador
+        faceClassif = cv2.CascadeClassifier(
+            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+        )
+        
+        # Leer imagen
+        frame = cv2.imread(filepath)
+        if frame is None:
+            return jsonify({"error": "No se pudo leer la imagen"}), 400
+        
+        # Procesar
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = faceClassif.detectMultiScale(gray, 1.3, 5)
+        
+        if len(faces) == 0:
+            return jsonify({"error": "No se detectó rostro"}), 200
+        
+        # Obtener carpetas de personas
+        dataPath = 'Datos'
+        imagePaths = os.listdir(dataPath)
+        
+        for (x, y, w, h) in faces:
+            rostro = gray[y:y+h, x:x+w]
+            rostro = cv2.resize(rostro, (150, 150), interpolation=cv2.INTER_CUBIC)
+            
+            result = face_recognizer.predict(rostro)
+            label, confidence = result
+            
+            print(f"🔍 Resultado: label={label}, confidence={confidence}")
+            
+            if confidence < 70:
+                nombre = imagePaths[label]
+                return jsonify({
+                    "nombre": nombre,
+                    "confidence": float(confidence)
+                }), 200
+            else:
+                return jsonify({"nombre": "Desconocido"}), 200
+        
+        return jsonify({"error": "No se pudo procesar el rostro"}), 400
+        
+    except Exception as e:
+        print(f"❌ Error en reconocimiento: {str(e)}")
+        return jsonify({"error": f"Error en el reconocimiento: {str(e)}"}), 500
+    finally:
+        # Limpiar archivo temporal
+        if os.path.exists(filepath):
+            os.remove(filepath)
 
 # -------------------------
 #    INICIAR SERVIDOR
