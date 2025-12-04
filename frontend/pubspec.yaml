@@ -13,6 +13,7 @@ dependencies:
   html: ^0.15.6  # Agregar esta dependencia
   google_ml_kit: ^0.10.0
   path: ^1.9.1
+  http_parser: ^4.1.2
 
 dev_dependencies:
   flutter_test:

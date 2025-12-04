@@ -39,7 +39,7 @@ class MainMenuPage extends StatelessWidget {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const RecognizeFacePage()),
+                  MaterialPageRoute(builder: (_) => RecognizeFacePage()),
                 );
               },
               child: const Text("Reconocer rostro"),
