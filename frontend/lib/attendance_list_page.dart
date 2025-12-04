@@ -41,37 +41,51 @@ class _AttendanceListPageState extends State<AttendanceListPage> {
       appBar: AppBar(title: Text("Historial de Asistencias")),
       body: Column(
         children: [
-          ElevatedButton.icon(
-            onPressed: cargarAsistencias,
-            icon: Icon(Icons.refresh),
-            label: Text("Actualizar"),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: ElevatedButton.icon(
+              onPressed: cargarAsistencias,
+              icon: Icon(Icons.refresh),
+              label: Text("Actualizar"),
+            ),
           ),
 
           Expanded(
-            child: ListView.builder(
-              itemCount: asistencias.length,
-              itemBuilder: (context, index) {
-                var item = asistencias[index];
-
-                return Card(
-                  margin: EdgeInsets.all(8),
-                  child: ListTile(
-                    leading: Icon(Icons.folder, color: Colors.blue),
-                    title: Text(item["persona"],
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text("Creado: ${item["fecha_creacion"]}"),
-                    trailing: Chip(
-                      label: Text(
-                        "Asistencias: ${item["asistencias"]}",
-                        style: TextStyle(color: Colors.white),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.vertical,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: const [
+                    DataColumn(
+                        label: Text("Persona",
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    DataColumn(
+                        label: Text("Fecha de Creación",
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                    DataColumn(
+                        label: Text("Asistencias",
+                            style: TextStyle(fontWeight: FontWeight.bold))),
+                  ],
+                  rows: asistencias.map((item) {
+                    return DataRow(cells: [
+                      DataCell(Text(item["persona"])),
+                      DataCell(Text(item["fecha_creacion"])),
+                      DataCell(
+                        Chip(
+                          label: Text(
+                            "${item["asistencias"]}",
+                            style: TextStyle(color: Colors.white),
+                          ),
+                          backgroundColor: Colors.green,
+                        ),
                       ),
-                      backgroundColor: Colors.green,
-                    ),
-                  ),
-                );
-              },
+                    ]);
+                  }).toList(),
+                ),
+              ),
             ),
-          )
+          ),
         ],
       ),
     );

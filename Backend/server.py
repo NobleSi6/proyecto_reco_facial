@@ -76,17 +76,14 @@ def ejecutar_entrenamiento():
         return False
 
 
-# ==========================================================
-#  NUEVO: Guardar asistencia cada vez que una persona aparece
-# ==========================================================
+# ===============================
+#  GUARDAR ASISTENCIA
+# ===============================
 def guardar_asistencia(nombre):
-    # Crear carpeta de la persona si no existe
     carpeta = os.path.join(OUTPUT_FOLDER, nombre)
     os.makedirs(carpeta, exist_ok=True)
 
     archivo_asistencia = os.path.join(carpeta, "asistencia.txt")
-
-    # Guardar fecha y hora
     with open(archivo_asistencia, "a") as f:
         f.write(f"Asistencia: {time.ctime()}\n")
 
@@ -94,29 +91,52 @@ def guardar_asistencia(nombre):
 
 
 # ===============================
+#  FUNCION DE RECONOCIMIENTO SEGURA
+# ===============================
+def reconocer_desde_imagen_segura(image_path):
+    """
+    Envuelve a reconocer_desde_imagen para manejar IndexError
+    y prevenir que el servidor rompa.
+    """
+    try:
+        result = reconocer_desde_imagen(image_path)
+        nombre = result.get("nombre", "Desconocido")
+        confidence = result.get("confidence", 100)
+        labels_disponibles = result.get("labels_disponibles", [])
+
+        if "label" in result:
+            label = result["label"]
+            if 0 <= label < len(labels_disponibles):
+                nombre = labels_disponibles[label] if confidence < 70 else "Desconocido"
+            else:
+                nombre = "Desconocido"
+
+        result["nombre"] = nombre
+        return result
+
+    except IndexError:
+        return {"nombre": "Desconocido", "confidence": 100}
+    except Exception as e:
+        return {"nombre": "Desconocido", "error": str(e), "confidence": 100}
+
+
+# ===============================
 #  ENDPOINTS
 # ===============================
 
-# 📌 Listar carpetas (personas registradas)
 @app.route('/personas', methods=['GET'])
 def listar_personas():
     try:
-        personas = []
-
-        if os.path.exists(OUTPUT_FOLDER):
-            personas = [
-                nombre
-                for nombre in os.listdir(OUTPUT_FOLDER)
-                if os.path.isdir(os.path.join(OUTPUT_FOLDER, nombre))
-            ]
+        personas = [
+            nombre for nombre in os.listdir(OUTPUT_FOLDER)
+            if os.path.isdir(os.path.join(OUTPUT_FOLDER, nombre))
+        ] if os.path.exists(OUTPUT_FOLDER) else []
 
         return jsonify({"personas": personas}), 200
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-# 📌 Registrar imagen y guardar rostro
 @app.route('/registrar_foto', methods=['POST'])
 def registrar_foto():
     nombre = request.form.get('nombre')
@@ -124,10 +144,8 @@ def registrar_foto():
 
     if not nombre:
         return jsonify({"error": "Nombre requerido"}), 400
-
     if not imagen:
         return jsonify({"error": "No se envió imagen"}), 400
-
     if not allowed_file(imagen.filename):
         return jsonify({"error": "Formato no permitido"}), 400
 
@@ -136,7 +154,6 @@ def registrar_foto():
     imagen.save(filepath)
 
     saved = process_face_image(filepath, nombre)
-
     if not saved:
         return jsonify({"error": "No se detectó rostro"}), 400
 
@@ -155,7 +172,6 @@ def registrar_foto():
     }), 200
 
 
-# 📌 Reconocer rostro + guardar asistencia solo si es válido
 @app.route('/reconocer', methods=['POST'])
 def reconocer():
     if "imagen" not in request.files:
@@ -165,42 +181,30 @@ def reconocer():
     temp_path = os.path.join(BASE_DIR, f"temp_{int(time.time() * 1000)}.jpg")
     imagen.save(temp_path)
 
-    result = reconocer_desde_imagen(temp_path)
+    result = reconocer_desde_imagen_segura(temp_path)
     os.remove(temp_path)
 
     nombre = result.get("nombre")
-
-    # ✅ Guardar asistencia solo si es un nombre válido
     if nombre and nombre not in ["Desconocido", "No se detectó rostro"]:
         guardar_asistencia(nombre)
 
     return jsonify(result), 200
 
 
-# 📌 Endpoint para mostrar historial de carpetas y asistencias
 @app.route('/asistencias', methods=['GET'])
 def asistencias():
     lista = []
-
     for persona in os.listdir(OUTPUT_FOLDER):
         persona_path = os.path.join(OUTPUT_FOLDER, persona)
-
         if os.path.isdir(persona_path):
             fecha_creacion = time.ctime(os.path.getctime(persona_path))
-
             archivo_asistencia = os.path.join(persona_path, "asistencia.txt")
-            if os.path.exists(archivo_asistencia):
-                with open(archivo_asistencia, "r") as f:
-                    conteo = len(f.readlines())
-            else:
-                conteo = 0
-
+            conteo = len(open(archivo_asistencia).readlines()) if os.path.exists(archivo_asistencia) else 0
             lista.append({
                 "persona": persona,
                 "fecha_creacion": fecha_creacion,
                 "asistencias": conteo
             })
-
     return jsonify({"asistencias": lista})
 
 
