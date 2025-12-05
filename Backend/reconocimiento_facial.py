@@ -2,7 +2,7 @@ import cv2
 import os
 
 # Ruta donde se guardan las carpetas con nombres
-DATA_PATH = 'C:/Users/elias/OneDrive/Desktop/proyecto_reco_facial-main/proyecto_reco_facial-main/Backend/Datos'
+DATA_PATH = 'C:/Users/Juan Jose/Desktop/Reconociemiento Facial/proyecto_reco_facial/Backend/Datos'
 image_paths = os.listdir(DATA_PATH)
 
 # Cargar reconocedor LBPH entrenado

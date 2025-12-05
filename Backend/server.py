@@ -139,7 +139,8 @@ def listar_personas():
 
 @app.route('/registrar_foto', methods=['POST'])
 def registrar_foto():
-    nombre = request.form.get('nombre')
+    # 🔥 LIMPIAR ESPACIOS EN BLANCO DEL NOMBRE
+    nombre = request.form.get('nombre', '').strip()
     imagen = request.files.get('imagen')
 
     if not nombre:
@@ -158,6 +159,11 @@ def registrar_foto():
         return jsonify({"error": "No se detectó rostro"}), 400
 
     person_folder = os.path.join(OUTPUT_FOLDER, nombre)
+    
+    # 🔥 VERIFICAR QUE LA CARPETA EXISTE ANTES DE CONTAR
+    if not os.path.exists(person_folder):
+        os.makedirs(person_folder, exist_ok=True)
+    
     count = len(os.listdir(person_folder))
 
     estado = "waiting"
@@ -182,7 +188,12 @@ def reconocer():
     imagen.save(temp_path)
 
     result = reconocer_desde_imagen_segura(temp_path)
-    os.remove(temp_path)
+    
+    # Limpiar archivo temporal
+    try:
+        os.remove(temp_path)
+    except:
+        pass
 
     nombre = result.get("nombre")
     if nombre and nombre not in ["Desconocido", "No se detectó rostro"]:
@@ -194,12 +205,21 @@ def reconocer():
 @app.route('/asistencias', methods=['GET'])
 def asistencias():
     lista = []
+    if not os.path.exists(OUTPUT_FOLDER):
+        return jsonify({"asistencias": lista})
+        
     for persona in os.listdir(OUTPUT_FOLDER):
         persona_path = os.path.join(OUTPUT_FOLDER, persona)
         if os.path.isdir(persona_path):
             fecha_creacion = time.ctime(os.path.getctime(persona_path))
             archivo_asistencia = os.path.join(persona_path, "asistencia.txt")
-            conteo = len(open(archivo_asistencia).readlines()) if os.path.exists(archivo_asistencia) else 0
+            conteo = 0
+            if os.path.exists(archivo_asistencia):
+                try:
+                    with open(archivo_asistencia, 'r') as f:
+                        conteo = len(f.readlines())
+                except:
+                    conteo = 0
             lista.append({
                 "persona": persona,
                 "fecha_creacion": fecha_creacion,

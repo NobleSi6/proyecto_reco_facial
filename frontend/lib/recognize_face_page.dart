@@ -1,18 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
 class RecognizeFacePage extends StatefulWidget {
+  const RecognizeFacePage({super.key});
+
   @override
-  _RecognizeFacePageState createState() => _RecognizeFacePageState();
+  RecognizeFacePageState createState() => RecognizeFacePageState();
 }
 
-class _RecognizeFacePageState extends State<RecognizeFacePage> {
+class RecognizeFacePageState extends State<RecognizeFacePage> {
   CameraController? controller;
   List<CameraDescription>? cameras;
   String recognizedName = "Esperando...";
@@ -25,14 +26,8 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
   // Mapa para guardar estado de presencia
   Map<String, String> estadoPersonas = {};
 
-  // URLs del servidor
-  final String reconocerUrl = kIsWeb
-      ? "http://127.0.0.1:8000/reconocer"
-      : "http://10.0.2.2:8000/reconocer";
-
-  final String personasUrl = kIsWeb
-      ? "http://127.0.0.1:8000/personas"
-      : "http://10.0.2.2:8000/personas";
+  // ⚠️ CAMBIAR ESTA IP POR LA IP DE TU COMPUTADORA
+  static const String BASE_URL = "http://192.168.1.10:8000";
 
   @override
   void initState() {
@@ -53,13 +48,16 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
   // ========================
   Future<void> cargarPersonas() async {
     try {
-      final response = await http.get(Uri.parse(personasUrl));
+      final response = await http.get(
+        Uri.parse('$BASE_URL/personas'),
+        headers: {'Content-Type': 'application/json'},
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
 
         setState(() {
-          personasRegistradas = List<String>.from(data["personas"]);
+          personasRegistradas = List<String>.from(data["personas"] ?? []);
 
           // Todas empiezan ausentes, excepto las ya marcadas
           for (var persona in personasRegistradas) {
@@ -69,6 +67,11 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
       }
     } catch (e) {
       print("❌ Error al cargar personas: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error al cargar personas: $e")));
+      }
     }
   }
 
@@ -80,11 +83,19 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
       cameras = await availableCameras();
 
       if (cameras!.isNotEmpty) {
-        controller = CameraController(cameras!.first, ResolutionPreset.medium);
+        // Usar cámara frontal si está disponible (índice 1), sino usar la primera
+        final cameraIndex = cameras!.length > 1 ? 1 : 0;
+        controller = CameraController(
+          cameras![cameraIndex],
+          ResolutionPreset.medium,
+        );
         await controller!.initialize();
+
+        if (!mounted) return;
 
         setState(() {});
 
+        // Iniciar captura automática cada 5 segundos
         captureTimer = Timer.periodic(
           const Duration(seconds: 5),
           (_) => captureAndRecognize(),
@@ -93,7 +104,9 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
         setState(() => recognizedName = "No se encontró cámara.");
       }
     } catch (e) {
-      setState(() => recognizedName = "Error al iniciar cámara: $e");
+      if (mounted) {
+        setState(() => recognizedName = "Error al iniciar cámara: $e");
+      }
     }
   }
 
@@ -101,7 +114,8 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
   //   Capturar y reconocer
   // ========================
   Future<void> captureAndRecognize() async {
-    if (controller == null || !controller!.value.isInitialized || isProcessing) return;
+    if (controller == null || !controller!.value.isInitialized || isProcessing)
+      return;
 
     setState(() => isProcessing = true);
 
@@ -109,7 +123,10 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
       XFile file = await controller!.takePicture();
       Uint8List imageBytes = await file.readAsBytes();
 
-      var request = http.MultipartRequest("POST", Uri.parse(reconocerUrl));
+      var request = http.MultipartRequest(
+        "POST",
+        Uri.parse('$BASE_URL/reconocer'),
+      );
       request.files.add(
         http.MultipartFile.fromBytes(
           "imagen",
@@ -119,30 +136,40 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
         ),
       );
 
-      var response = await request.send();
+      var response = await request.send().timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final body = await response.stream.bytesToString();
         var data = json.decode(body);
         String nombreReconocido = data["nombre"] ?? "Desconocido";
 
+        if (!mounted) return;
+
         setState(() {
           recognizedName = nombreReconocido;
 
           // 🔥 SOLO MARCA PRESENTE AL RECONOCIDO
           // NO CAMBIA EL ESTADO DE LOS DEMÁS
-          if (personasRegistradas.contains(nombreReconocido)) {
+          if (personasRegistradas.contains(nombreReconocido) &&
+              nombreReconocido != "Desconocido") {
             estadoPersonas[nombreReconocido] = "Presente";
           }
         });
       } else {
-        setState(() => recognizedName = "No identificado");
+        if (mounted) {
+          setState(() => recognizedName = "No identificado");
+        }
       }
     } catch (e) {
-      setState(() => recognizedName = "Error: $e");
+      print("❌ Error en reconocimiento: $e");
+      if (mounted) {
+        setState(() => recognizedName = "Error: $e");
+      }
     }
 
-    setState(() => isProcessing = false);
+    if (mounted) {
+      setState(() => isProcessing = false);
+    }
   }
 
   // ========================
@@ -152,13 +179,13 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
   Widget build(BuildContext context) {
     if (controller == null || !controller!.value.isInitialized) {
       return Scaffold(
-        appBar: AppBar(title: Text("Reconocer Rostro")),
-        body: Center(child: CircularProgressIndicator()),
+        appBar: AppBar(title: const Text("Reconocer Rostro")),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text("Reconocer Rostro")),
+      appBar: AppBar(title: const Text("Reconocer Rostro")),
       body: Row(
         children: [
           // 📸 Cámara
@@ -173,14 +200,17 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
                   right: 0,
                   child: Center(
                     child: Container(
-                      padding: EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: Colors.black54,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         isProcessing ? "Procesando..." : recognizedName,
-                        style: TextStyle(color: Colors.white, fontSize: 22),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                        ),
                       ),
                     ),
                   ),
@@ -197,10 +227,10 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
               child: Column(
                 children: [
                   Container(
-                    padding: EdgeInsets.all(12),
-                    color: Color.fromARGB(255, 48, 44, 92),
+                    padding: const EdgeInsets.all(12),
+                    color: const Color.fromARGB(255, 48, 44, 92),
                     width: double.infinity,
-                    child: Text(
+                    child: const Text(
                       "Personas Registradas",
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -210,39 +240,52 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
                       ),
                     ),
                   ),
-
                   TextButton.icon(
                     onPressed: cargarPersonas,
-                    icon: Icon(Icons.refresh, color: Colors.white),
-                    label: Text("Actualizar", style: TextStyle(color: Colors.white)),
-                  ),
-
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: personasRegistradas.length,
-                      itemBuilder: (context, index) {
-                        String persona = personasRegistradas[index];
-                        String estado = estadoPersonas[persona] ?? "Ausente";
-
-                        return ListTile(
-                          leading: Icon(
-                            Icons.person,
-                            color: estado == "Presente" ? Colors.green : Colors.red,
-                          ),
-                          title: Text(
-                            persona,
-                            style: TextStyle(color: Colors.white),
-                          ),
-                          trailing: Text(
-                            estado,
-                            style: TextStyle(
-                              color: estado == "Presente" ? Colors.green : Colors.red,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        );
-                      },
+                    icon: const Icon(Icons.refresh, color: Colors.white),
+                    label: const Text(
+                      "Actualizar",
+                      style: TextStyle(color: Colors.white),
                     ),
+                  ),
+                  Expanded(
+                    child: personasRegistradas.isEmpty
+                        ? const Center(
+                            child: Text(
+                              "No hay personas registradas",
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: personasRegistradas.length,
+                            itemBuilder: (context, index) {
+                              String persona = personasRegistradas[index];
+                              String estado =
+                                  estadoPersonas[persona] ?? "Ausente";
+
+                              return ListTile(
+                                leading: Icon(
+                                  Icons.person,
+                                  color: estado == "Presente"
+                                      ? Colors.green
+                                      : Colors.red,
+                                ),
+                                title: Text(
+                                  persona,
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                                trailing: Text(
+                                  estado,
+                                  style: TextStyle(
+                                    color: estado == "Presente"
+                                        ? Colors.green
+                                        : Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),

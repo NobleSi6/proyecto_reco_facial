@@ -1,6 +1,8 @@
-import 'dart:html' as html;
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
 class RegisterFacePage extends StatefulWidget {
   const RegisterFacePage({super.key});
@@ -16,6 +18,9 @@ class RegisterFacePageState extends State<RegisterFacePage> {
   String nombre = "";
   int fotosTomadas = 0;
 
+  // ⚠️ CAMBIAR ESTA IP POR LA IP DE TU COMPUTADORA
+  static const String BASE_URL = "http://192.168.1.10:8000";
+
   @override
   void initState() {
     super.initState();
@@ -24,7 +29,12 @@ class RegisterFacePageState extends State<RegisterFacePage> {
 
   Future<void> iniciarCamara() async {
     final cameras = await availableCameras();
-    _controller = CameraController(cameras[1], ResolutionPreset.medium);
+    // Usar cámara frontal (index 1) o trasera (index 0)
+    final cameraIndex = cameras.length > 1 ? 1 : 0;
+    _controller = CameraController(
+      cameras[cameraIndex],
+      ResolutionPreset.medium,
+    );
 
     await _controller.initialize();
 
@@ -32,22 +42,30 @@ class RegisterFacePageState extends State<RegisterFacePage> {
     setState(() => cameraReady = true);
   }
 
-  Future<void> enviarFotoAlServidor(html.File imagen) async {
-    var formData = html.FormData();
-    formData.append('nombre', nombre);
-    formData.appendBlob('imagen', imagen, 'foto.png');
+  Future<void> enviarFotoAlServidor(String imagePath) async {
+    try {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$BASE_URL/registrar_foto'),
+      );
 
-    var request = html.HttpRequest();
-    request.open('POST', 'http://127.0.0.1:8000/registrar_foto');
-    request.send(formData);
+      request.fields['nombre'] = nombre;
+      request.files.add(await http.MultipartFile.fromPath('imagen', imagePath));
 
-    request.onLoadEnd.listen((event) {
-      if (request.status != 200 && mounted) {
+      var response = await request.send();
+
+      if (response.statusCode != 200 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Error enviando una foto al servidor")),
+          const SnackBar(content: Text("Error enviando foto al servidor")),
         );
       }
-    });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error de conexión: $e")));
+      }
+    }
   }
 
   Future<void> capturarYEnviar() async {
@@ -59,21 +77,25 @@ class RegisterFacePageState extends State<RegisterFacePage> {
       return;
     }
 
-    final foto = await _controller.takePicture();
+    try {
+      final foto = await _controller.takePicture();
 
-    // Convertir JPEG → PNG rápido usando Web Blob
-    final bytes = await foto.readAsBytes();
-    final pngFile = html.File([bytes], 'foto.png', {'type': 'image/png'});
+      if (!mounted) return;
 
-    if (!mounted) return;
+      // Actualizar contador
+      setState(() {
+        fotosTomadas++;
+      });
 
-    // Actualizar contador
-    setState(() {
-      fotosTomadas++;
-    });
-
-    // Enviar inmediatamente al servidor 🚀
-    enviarFotoAlServidor(pngFile);
+      // Enviar al servidor
+      await enviarFotoAlServidor(foto.path);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error capturando foto: $e")));
+      }
+    }
   }
 
   Future<void> capturarMultiplesFotos() async {
@@ -82,10 +104,10 @@ class RegisterFacePageState extends State<RegisterFacePage> {
     if (!mounted) return;
     setState(() => isCapturing = true);
 
-    while (fotosTomadas < 300) {
+    while (fotosTomadas < 300 && isCapturing) {
       await capturarYEnviar();
 
-      // Disminuir retraso → MÁS RÁPIDO
+      // Pequeño delay entre capturas
       await Future.delayed(const Duration(milliseconds: 300));
 
       if (!mounted) return;
@@ -100,6 +122,10 @@ class RegisterFacePageState extends State<RegisterFacePage> {
     );
   }
 
+  void detenerCaptura() {
+    setState(() => isCapturing = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -107,7 +133,6 @@ class RegisterFacePageState extends State<RegisterFacePage> {
       body: Column(
         children: [
           const SizedBox(height: 20),
-
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: TextField(
@@ -116,26 +141,21 @@ class RegisterFacePageState extends State<RegisterFacePage> {
                 labelText: "Nombre de la persona",
               ),
               onChanged: (v) => nombre = v,
+              enabled: !isCapturing,
             ),
           ),
-
           const SizedBox(height: 20),
-
           Expanded(
             child: cameraReady
                 ? CameraPreview(_controller)
                 : const Center(child: CircularProgressIndicator()),
           ),
-
           const SizedBox(height: 20),
-
           Text(
             "Fotos tomadas: $fotosTomadas / 300",
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-
           const SizedBox(height: 10),
-
           if (isCapturing)
             const Padding(
               padding: EdgeInsets.all(8.0),
@@ -144,14 +164,25 @@ class RegisterFacePageState extends State<RegisterFacePage> {
                 style: TextStyle(fontSize: 18, color: Colors.amber),
               ),
             ),
-
-          ElevatedButton(
-            onPressed: isCapturing ? null : capturarMultiplesFotos,
-            child: isCapturing
-                ? const Text("Capturando…")
-                : const Text("Registrar 300 fotos"),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton(
+                onPressed: isCapturing ? null : capturarMultiplesFotos,
+                child: isCapturing
+                    ? const Text("Capturando…")
+                    : const Text("Registrar 300 fotos"),
+              ),
+              if (isCapturing) ...[
+                const SizedBox(width: 10),
+                ElevatedButton(
+                  onPressed: detenerCaptura,
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  child: const Text("Detener"),
+                ),
+              ],
+            ],
           ),
-
           const SizedBox(height: 20),
         ],
       ),
