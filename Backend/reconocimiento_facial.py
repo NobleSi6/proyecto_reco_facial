@@ -41,7 +41,7 @@ def reconocer_desde_imagen(image_path: str):
 
     for (x, y, w, h) in faces:
         rostro = gray[y:y+h, x:x+w]
-        rostro = cv2.resize(rostro, (150,150), interpolation=cv2.INTER_CUBIC)
+        rostro = cv2.resize(rostro, (250,250), interpolation=cv2.INTER_CUBIC)
 
         label, confidence = face_recognizer.predict(rostro)
 
