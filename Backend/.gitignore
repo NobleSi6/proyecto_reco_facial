@@ -1,0 +1,28 @@
+# Ignorar archivo grande del modelo facial
+Backend/modeloLBPHFace.xml
+
+# Archivos temporales
+*.log
+*.tmp
+
+# Carpetas de dependencias
+node_modules/
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Java / Android
+*.class
+/build/
+.gradle/
+local.properties
+
+# IDEs
+.vscode/
+.idea/
+
+# Sistema operativo
+Thumbs.db
+.DS_Store
