@@ -26,3 +26,7 @@ local.properties
 # Sistema operativo
 Thumbs.db
 .DS_Store
+
+uploads/
+Datos/
+
