@@ -8,24 +8,24 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
 class RecognizeFacePage extends StatefulWidget {
+  const RecognizeFacePage({super.key});
+
   @override
-  _RecognizeFacePageState createState() => _RecognizeFacePageState();
+  RecognizeFacePageState createState() => RecognizeFacePageState();
 }
 
-class _RecognizeFacePageState extends State<RecognizeFacePage> {
+class RecognizeFacePageState extends State<RecognizeFacePage> {
   CameraController? controller;
   List<CameraDescription>? cameras;
   String recognizedName = "Esperando...";
   Timer? captureTimer;
   bool isProcessing = false;
 
-  // Lista de personas registradas
+  // Personas
   List<String> personasRegistradas = [];
-
-  // Mapa para guardar estado de presencia
   Map<String, String> estadoPersonas = {};
 
-  // URLs del servidor
+  // URLs
   final String reconocerUrl = kIsWeb
       ? "http://127.0.0.1:8000/reconocer"
       : "http://10.0.2.2:8000/reconocer";
@@ -49,26 +49,34 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
   }
 
   // ========================
-  //   Cargar lista personas
+  //   Cargar personas
   // ========================
   Future<void> cargarPersonas() async {
     try {
-      final response = await http.get(Uri.parse(personasUrl));
+      final response = await http
+          .get(
+            Uri.parse(personasUrl),
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
 
-        setState(() {
-          personasRegistradas = List<String>.from(data["personas"]);
+        if (!mounted) return;
 
-          // Todas empiezan ausentes, excepto las ya marcadas
+        setState(() {
+          personasRegistradas = List<String>.from(data["personas"] ?? []);
+
           for (var persona in personasRegistradas) {
             estadoPersonas.putIfAbsent(persona, () => "Ausente");
           }
         });
+      } else {
+        _showSnack("Error del servidor: ${response.statusCode}");
       }
     } catch (e) {
-      print("❌ Error al cargar personas: $e");
+      _showSnack("Error al cargar personas");
     }
   }
 
@@ -79,37 +87,55 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
     try {
       cameras = await availableCameras();
 
-      if (cameras!.isNotEmpty) {
-        controller = CameraController(cameras!.first, ResolutionPreset.medium);
-        await controller!.initialize();
-
-        setState(() {});
-
-        captureTimer = Timer.periodic(
-          const Duration(seconds: 5),
-          (_) => captureAndRecognize(),
-        );
-      } else {
-        setState(() => recognizedName = "No se encontró cámara.");
+      if (cameras == null || cameras!.isEmpty) {
+        setState(() => recognizedName = "No se encontró cámara");
+        return;
       }
+
+      // 👉 Usa cámara frontal si existe
+      final cameraIndex = cameras!.length > 1 ? 1 : 0;
+
+      controller = CameraController(
+        cameras![cameraIndex],
+        ResolutionPreset.medium,
+      );
+
+      await controller!.initialize();
+
+      if (!mounted) return;
+
+      setState(() {});
+
+      captureTimer = Timer.periodic(
+        const Duration(seconds: 5),
+        (_) => captureAndRecognize(),
+      );
     } catch (e) {
-      setState(() => recognizedName = "Error al iniciar cámara: $e");
+      if (mounted) {
+        setState(() => recognizedName = "Error al iniciar cámara");
+      }
     }
   }
 
   // ========================
-  //   Capturar y reconocer
+  //   Captura y reconocimiento
   // ========================
   Future<void> captureAndRecognize() async {
-    if (controller == null || !controller!.value.isInitialized || isProcessing) return;
+    if (controller == null ||
+        !controller!.value.isInitialized ||
+        isProcessing) return;
 
     setState(() => isProcessing = true);
 
     try {
-      XFile file = await controller!.takePicture();
-      Uint8List imageBytes = await file.readAsBytes();
+      final XFile file = await controller!.takePicture();
+      final Uint8List imageBytes = await file.readAsBytes();
 
-      var request = http.MultipartRequest("POST", Uri.parse(reconocerUrl));
+      final request = http.MultipartRequest(
+        "POST",
+        Uri.parse(reconocerUrl),
+      );
+
       request.files.add(
         http.MultipartFile.fromBytes(
           "imagen",
@@ -119,30 +145,45 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
         ),
       );
 
-      var response = await request.send();
+      final response =
+          await request.send().timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final body = await response.stream.bytesToString();
-        var data = json.decode(body);
-        String nombreReconocido = data["nombre"] ?? "Desconocido";
+        final data = json.decode(body);
+
+        final nombre = data["nombre"] ?? "Desconocido";
+
+        if (!mounted) return;
 
         setState(() {
-          recognizedName = nombreReconocido;
+          recognizedName = nombre;
 
-          // 🔥 SOLO MARCA PRESENTE AL RECONOCIDO
-          // NO CAMBIA EL ESTADO DE LOS DEMÁS
-          if (personasRegistradas.contains(nombreReconocido)) {
-            estadoPersonas[nombreReconocido] = "Presente";
+          if (personasRegistradas.contains(nombre) &&
+              nombre != "Desconocido") {
+            estadoPersonas[nombre] = "Presente";
           }
         });
       } else {
-        setState(() => recognizedName = "No identificado");
+        if (mounted) {
+          setState(() => recognizedName = "No identificado");
+        }
       }
     } catch (e) {
-      setState(() => recognizedName = "Error: $e");
+      if (mounted) {
+        setState(() => recognizedName = "Error de reconocimiento");
+      }
     }
 
-    setState(() => isProcessing = false);
+    if (mounted) {
+      setState(() => isProcessing = false);
+    }
+  }
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ========================
@@ -152,13 +193,13 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
   Widget build(BuildContext context) {
     if (controller == null || !controller!.value.isInitialized) {
       return Scaffold(
-        appBar: AppBar(title: Text("Reconocer Rostro")),
-        body: Center(child: CircularProgressIndicator()),
+        appBar: AppBar(title: const Text("Reconocer Rostro")),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text("Reconocer Rostro")),
+      appBar: AppBar(title: const Text("Reconocer Rostro")),
       body: Row(
         children: [
           // 📸 Cámara
@@ -173,14 +214,17 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
                   right: 0,
                   child: Center(
                     child: Container(
-                      padding: EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: Colors.black54,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         isProcessing ? "Procesando..." : recognizedName,
-                        style: TextStyle(color: Colors.white, fontSize: 22),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                        ),
                       ),
                     ),
                   ),
@@ -189,7 +233,7 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
             ),
           ),
 
-          // 📋 Lista personas + estado
+          // 📋 Panel lateral
           Expanded(
             flex: 1,
             child: Container(
@@ -197,10 +241,10 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
               child: Column(
                 children: [
                   Container(
-                    padding: EdgeInsets.all(12),
-                    color: Color.fromARGB(255, 48, 44, 92),
+                    padding: const EdgeInsets.all(12),
                     width: double.infinity,
-                    child: Text(
+                    color: const Color.fromARGB(255, 48, 44, 92),
+                    child: const Text(
                       "Personas Registradas",
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -210,39 +254,53 @@ class _RecognizeFacePageState extends State<RecognizeFacePage> {
                       ),
                     ),
                   ),
-
                   TextButton.icon(
                     onPressed: cargarPersonas,
-                    icon: Icon(Icons.refresh, color: Colors.white),
-                    label: Text("Actualizar", style: TextStyle(color: Colors.white)),
-                  ),
-
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: personasRegistradas.length,
-                      itemBuilder: (context, index) {
-                        String persona = personasRegistradas[index];
-                        String estado = estadoPersonas[persona] ?? "Ausente";
-
-                        return ListTile(
-                          leading: Icon(
-                            Icons.person,
-                            color: estado == "Presente" ? Colors.green : Colors.red,
-                          ),
-                          title: Text(
-                            persona,
-                            style: TextStyle(color: Colors.white),
-                          ),
-                          trailing: Text(
-                            estado,
-                            style: TextStyle(
-                              color: estado == "Presente" ? Colors.green : Colors.red,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        );
-                      },
+                    icon: const Icon(Icons.refresh, color: Colors.white),
+                    label: const Text(
+                      "Actualizar",
+                      style: TextStyle(color: Colors.white),
                     ),
+                  ),
+                  Expanded(
+                    child: personasRegistradas.isEmpty
+                        ? const Center(
+                            child: Text(
+                              "No hay personas registradas",
+                              style: TextStyle(color: Colors.white70),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: personasRegistradas.length,
+                            itemBuilder: (context, index) {
+                              final persona = personasRegistradas[index];
+                              final estado =
+                                  estadoPersonas[persona] ?? "Ausente";
+
+                              return ListTile(
+                                leading: Icon(
+                                  Icons.person,
+                                  color: estado == "Presente"
+                                      ? Colors.green
+                                      : Colors.red,
+                                ),
+                                title: Text(
+                                  persona,
+                                  style:
+                                      const TextStyle(color: Colors.white),
+                                ),
+                                trailing: Text(
+                                  estado,
+                                  style: TextStyle(
+                                    color: estado == "Presente"
+                                        ? Colors.green
+                                        : Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                   ),
                 ],
               ),

@@ -5,9 +5,20 @@ import time
 import cv2
 import subprocess
 from reconocimiento_facial import reconocer_desde_imagen
+from datetime import datetime
 
+# ===============================
+#  APP + CORS (FIX FLUTTER WEB)
+# ===============================
 app = Flask(__name__)
-CORS(app)
+
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+    supports_credentials=True,
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"]
+)
 
 # ===============================
 #  CONFIGURACIONES
@@ -84,40 +95,39 @@ def guardar_asistencia(nombre):
     os.makedirs(carpeta, exist_ok=True)
 
     archivo_asistencia = os.path.join(carpeta, "asistencia.txt")
-    with open(archivo_asistencia, "a") as f:
-        f.write(f"Asistencia: {time.ctime()}\n")
+    hoy = datetime.now().strftime("%Y-%m-%d")
 
-    print(f"✔ Asistencia guardada para {nombre}")
+    if os.path.exists(archivo_asistencia):
+        with open(archivo_asistencia, "r") as f:
+            if hoy in f.read():
+                return
+
+    with open(archivo_asistencia, "a") as f:
+        f.write(hoy + "\n")
 
 
 # ===============================
-#  FUNCION DE RECONOCIMIENTO SEGURA
+#  RECONOCIMIENTO SEGURO
 # ===============================
 def reconocer_desde_imagen_segura(image_path):
-    """
-    Envuelve a reconocer_desde_imagen para manejar IndexError
-    y prevenir que el servidor rompa.
-    """
     try:
         result = reconocer_desde_imagen(image_path)
         nombre = result.get("nombre", "Desconocido")
         confidence = result.get("confidence", 100)
-        labels_disponibles = result.get("labels_disponibles", [])
+        labels = result.get("labels_disponibles", [])
 
         if "label" in result:
             label = result["label"]
-            if 0 <= label < len(labels_disponibles):
-                nombre = labels_disponibles[label] if confidence < 70 else "Desconocido"
+            if 0 <= label < len(labels):
+                nombre = labels[label] if confidence < 70 else "Desconocido"
             else:
                 nombre = "Desconocido"
 
         result["nombre"] = nombre
         return result
 
-    except IndexError:
-        return {"nombre": "Desconocido", "confidence": 100}
     except Exception as e:
-        return {"nombre": "Desconocido", "error": str(e), "confidence": 100}
+        return {"nombre": "Desconocido", "confidence": 100, "error": str(e)}
 
 
 # ===============================
@@ -126,15 +136,11 @@ def reconocer_desde_imagen_segura(image_path):
 
 @app.route('/personas', methods=['GET'])
 def listar_personas():
-    try:
-        personas = [
-            nombre for nombre in os.listdir(OUTPUT_FOLDER)
-            if os.path.isdir(os.path.join(OUTPUT_FOLDER, nombre))
-        ] if os.path.exists(OUTPUT_FOLDER) else []
-
-        return jsonify({"personas": personas}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    personas = [
+        nombre for nombre in os.listdir(OUTPUT_FOLDER)
+        if os.path.isdir(os.path.join(OUTPUT_FOLDER, nombre))
+    ]
+    return jsonify({"personas": personas}), 200
 
 
 @app.route('/registrar_foto', methods=['POST'])
@@ -142,15 +148,15 @@ def registrar_foto():
     nombre = request.form.get('nombre')
     imagen = request.files.get('imagen')
 
-    if not nombre:
-        return jsonify({"error": "Nombre requerido"}), 400
-    if not imagen:
-        return jsonify({"error": "No se envió imagen"}), 400
+    if not nombre or not imagen:
+        return jsonify({"error": "Datos incompletos"}), 400
+
     if not allowed_file(imagen.filename):
         return jsonify({"error": "Formato no permitido"}), 400
 
-    filename = f"{int(time.time() * 1000)}_{imagen.filename}"
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    filepath = os.path.join(
+        UPLOAD_FOLDER, f"{int(time.time() * 1000)}_{imagen.filename}"
+    )
     imagen.save(filepath)
 
     saved = process_face_image(filepath, nombre)
@@ -160,16 +166,10 @@ def registrar_foto():
     person_folder = os.path.join(OUTPUT_FOLDER, nombre)
     count = len(os.listdir(person_folder))
 
-    estado = "waiting"
     if count >= MIN_IMAGES_PER_PERSON:
         ejecutar_entrenamiento()
-        estado = "training"
 
-    return jsonify({
-        "message": "Imagen guardada",
-        "total_imagenes": count,
-        "estado": estado
-    }), 200
+    return jsonify({"total_imagenes": count}), 200
 
 
 @app.route('/reconocer', methods=['POST'])
@@ -184,9 +184,8 @@ def reconocer():
     result = reconocer_desde_imagen_segura(temp_path)
     os.remove(temp_path)
 
-    nombre = result.get("nombre")
-    if nombre and nombre not in ["Desconocido", "No se detectó rostro"]:
-        guardar_asistencia(nombre)
+    if result.get("nombre") not in ["Desconocido", None]:
+        guardar_asistencia(result["nombre"])
 
     return jsonify(result), 200
 
@@ -194,18 +193,80 @@ def reconocer():
 @app.route('/asistencias', methods=['GET'])
 def asistencias():
     lista = []
+
     for persona in os.listdir(OUTPUT_FOLDER):
-        persona_path = os.path.join(OUTPUT_FOLDER, persona)
-        if os.path.isdir(persona_path):
-            fecha_creacion = time.ctime(os.path.getctime(persona_path))
-            archivo_asistencia = os.path.join(persona_path, "asistencia.txt")
-            conteo = len(open(archivo_asistencia).readlines()) if os.path.exists(archivo_asistencia) else 0
-            lista.append({
-                "persona": persona,
-                "fecha_creacion": fecha_creacion,
-                "asistencias": conteo
-            })
-    return jsonify({"asistencias": lista})
+        archivo = os.path.join(OUTPUT_FOLDER, persona, "asistencia.txt")
+        fechas = []
+
+        if os.path.exists(archivo):
+            with open(archivo) as f:
+                fechas = [line.strip() for line in f.readlines()]
+
+        lista.append({
+            "persona": persona,
+            "asistencias": len(fechas),
+            "fechas": fechas
+        })
+
+    return jsonify({"asistencias": lista}), 200
+
+
+@app.route('/personas/<nombre>', methods=['PUT'])
+def editar_persona(nombre):
+    data = request.get_json() or {}
+    nuevo = data.get("nuevo_nombre")
+
+    origen = os.path.join(OUTPUT_FOLDER, nombre)
+    destino = os.path.join(OUTPUT_FOLDER, nuevo)
+
+    if not nuevo or not os.path.exists(origen):
+        return jsonify({"error": "Datos inválidos"}), 400
+
+    os.rename(origen, destino)
+    return jsonify({"message": "Persona actualizada"}), 200
+
+
+@app.route('/personas/<nombre>', methods=['DELETE'])
+def eliminar_persona(nombre):
+    path = os.path.join(OUTPUT_FOLDER, nombre)
+
+    if not os.path.exists(path):
+        return jsonify({"error": "No existe"}), 404
+
+    for root, dirs, files in os.walk(path, topdown=False):
+        for f in files:
+            os.remove(os.path.join(root, f))
+        for d in dirs:
+            os.rmdir(os.path.join(root, d))
+    os.rmdir(path)
+
+    return jsonify({"message": "Eliminado"}), 200
+
+
+@app.route('/asistencias/<nombre>', methods=['PUT'])
+def actualizar_asistencias(nombre):
+    data = request.get_json() or {}
+    fechas = data.get("fechas")
+
+    path = os.path.join(OUTPUT_FOLDER, nombre)
+    if not isinstance(fechas, list) or not os.path.exists(path):
+        return jsonify({"error": "Datos inválidos"}), 400
+
+    archivo = os.path.join(path, "asistencia.txt")
+    with open(archivo, "w") as f:
+        for fecha in fechas:
+            f.write(fecha + "\n")
+
+    return jsonify({"total": len(fechas)}), 200
+
+
+# ===============================
+#  OPTIONS (CORS PREFLIGHT FIX)
+# ===============================
+@app.route('/asistencias/<nombre>', methods=['OPTIONS'])
+@app.route('/personas/<nombre>', methods=['OPTIONS'])
+def options_handler(nombre):
+    return '', 200
 
 
 # ===============================
