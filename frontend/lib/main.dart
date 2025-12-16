@@ -33,7 +33,6 @@ class MainMenuPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Sistema de Reconocimiento Facial"),
         centerTitle: true,
       ),
       body: Center(

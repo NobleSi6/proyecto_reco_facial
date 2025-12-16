@@ -226,8 +226,8 @@ class _AttendanceListPageState extends State<AttendanceListPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Historial de Asistencias"),
-        centerTitle: true,
-        backgroundColor: Colors.green,
+        centerTitle: false,
+        backgroundColor: const Color.fromARGB(0, 25, 45, 95),
       ),
       body: BlocBuilder<AttendanceBloc, AttendanceState>(
         builder: (context, state) {
@@ -246,17 +246,21 @@ class _AttendanceListPageState extends State<AttendanceListPage> {
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columns: const [
+                  DataColumn(label: Text("Nro.")),
                   DataColumn(label: Text("Persona")),
                   DataColumn(label: Text("Calendario")),
                   DataColumn(label: Text("Asistencias")),
                   DataColumn(label: Text("Acciones")),
                 ],
-                rows: data.map<DataRow>((item) {
+                rows: data.asMap().entries.map<DataRow>((entry) {
+                  final index = entry.key;
+                  final item = entry.value;
                   final persona = item["persona"] as String;
                   final fechas =
                       (item["fechas"] as List<dynamic>).cast<String>();
 
                   return DataRow(cells: [
+                    DataCell(Text('${index + 1}')),
                     DataCell(Text(persona)),
                     DataCell(
                       IconButton(

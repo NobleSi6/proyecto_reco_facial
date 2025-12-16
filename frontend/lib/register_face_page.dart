@@ -93,7 +93,7 @@ class RegisterFacePageState extends State<RegisterFacePage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Registrar Rostro"),
-        centerTitle: true,
+        centerTitle: false,
       ),
       body: Column(
         children: [
