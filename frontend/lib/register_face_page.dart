@@ -1,76 +1,129 @@
-import 'dart:html' as html;
+// lib/register_face_page.dart
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+import 'config/api_config.dart';
 
 class RegisterFacePage extends StatefulWidget {
   const RegisterFacePage({super.key});
 
   @override
-  RegisterFacePageState createState() => RegisterFacePageState();
+  State<RegisterFacePage> createState() => _RegisterFacePageState();
 }
 
-class RegisterFacePageState extends State<RegisterFacePage> {
-  late CameraController _controller;
+class _RegisterFacePageState extends State<RegisterFacePage> {
+  CameraController? _controller;
   bool cameraReady = false;
   bool isCapturing = false;
   String nombre = "";
   int fotosTomadas = 0;
+  int fotosEnviadas = 0;
 
   @override
   void initState() {
     super.initState();
+    ApiConfig.printConfig(); // Debug
     iniciarCamara();
   }
 
   Future<void> iniciarCamara() async {
-    final cameras = await availableCameras();
-    _controller = CameraController(cameras.length > 1 ? cameras[1] : cameras[0], ResolutionPreset.medium);
+    try {
+      final cameras = await availableCameras();
 
-    await _controller.initialize();
+      if (cameras.isEmpty) {
+        _showSnack("No se encontró cámara");
+        return;
+      }
 
-    if (!mounted) return;
-    setState(() => cameraReady = true);
+      // Usa cámara frontal si existe
+      final camera = cameras.length > 1 ? cameras[1] : cameras[0];
+
+      _controller = CameraController(camera, ResolutionPreset.medium);
+
+      await _controller!.initialize();
+
+      if (!mounted) return;
+      setState(() => cameraReady = true);
+    } catch (e) {
+      _showSnack("Error iniciando cámara: $e");
+    }
   }
 
-  Future<void> enviarFotoAlServidor(html.File imagen) async {
-    var formData = html.FormData();
-    formData.append('nombre', nombre);
-    formData.appendBlob('imagen', imagen, 'foto.png');
+  /// Enviar foto al servidor usando http multipart
+  Future<bool> enviarFotoAlServidor(Uint8List imageBytes) async {
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse(ApiConfig.registrarFotoUrl),
+      );
 
-    var request = html.HttpRequest();
-    request.open('POST', 'http://127.0.0.1:8000/registrar_foto');
-    request.send(formData);
+      // Agregar el nombre como campo
+      request.fields['nombre'] = nombre;
 
-    request.onLoadEnd.listen((_) {
-      if (request.status != 200 && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Error enviando una foto al servidor")),
-        );
+      // Agregar la imagen
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'imagen',
+          imageBytes,
+          filename: 'foto_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          contentType: MediaType('image', 'jpeg'),
+        ),
+      );
+
+      final response = await request.send().timeout(
+        const Duration(seconds: 10),
+      );
+
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        print("⚠️ Error del servidor: ${response.statusCode}");
+        return false;
       }
-    });
+    } catch (e) {
+      print("❌ Error enviando foto: $e");
+      return false;
+    }
   }
 
   Future<void> capturarYEnviar() async {
-    if (!cameraReady || nombre.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Ingresa un nombre primero")),
-      );
+    if (!cameraReady || _controller == null || nombre.isEmpty) {
+      _showSnack("Ingresa un nombre primero");
       return;
     }
 
-    final foto = await _controller.takePicture();
-    final bytes = await foto.readAsBytes();
-    final pngFile = html.File([bytes], 'foto.png', {'type': 'image/png'});
+    try {
+      final foto = await _controller!.takePicture();
+      final bytes = await foto.readAsBytes();
 
-    setState(() => fotosTomadas++);
+      setState(() => fotosTomadas++);
 
-    enviarFotoAlServidor(pngFile);
+      // Enviar al servidor
+      final enviado = await enviarFotoAlServidor(bytes);
+
+      if (enviado) {
+        setState(() => fotosEnviadas++);
+      }
+    } catch (e) {
+      print("Error capturando foto: $e");
+    }
   }
 
   Future<void> capturarMultiplesFotos() async {
     if (isCapturing) return;
 
-    setState(() => isCapturing = true);
+    if (nombre.trim().isEmpty) {
+      _showSnack("Por favor ingresa un nombre");
+      return;
+    }
+
+    setState(() {
+      isCapturing = true;
+      fotosTomadas = 0;
+      fotosEnviadas = 0;
+    });
 
     while (fotosTomadas < 300 && isCapturing) {
       await capturarYEnviar();
@@ -79,22 +132,26 @@ class RegisterFacePageState extends State<RegisterFacePage> {
 
     setState(() => isCapturing = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Todas las fotos enviadas al servidor")),
-    );
+    if (mounted) {
+      _showSnack(
+        "✅ Proceso terminado: $fotosEnviadas fotos enviadas correctamente",
+      );
+    }
   }
 
   void detenerCaptura() {
     setState(() => isCapturing = false);
   }
 
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Registrar Rostro"),
-        centerTitle: false,
-      ),
+      appBar: AppBar(title: const Text("Registrar Rostro"), centerTitle: false),
       body: Column(
         children: [
           const SizedBox(height: 16),
@@ -119,10 +176,10 @@ class RegisterFacePageState extends State<RegisterFacePage> {
 
           /// 📸 Cámara
           Expanded(
-            child: cameraReady
+            child: cameraReady && _controller != null
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: CameraPreview(_controller),
+                    child: CameraPreview(_controller!),
                   )
                 : const Center(child: CircularProgressIndicator()),
           ),
@@ -132,10 +189,12 @@ class RegisterFacePageState extends State<RegisterFacePage> {
           /// 📊 Contador
           Text(
             "Fotos tomadas: $fotosTomadas / 300",
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+
+          Text(
+            "Fotos enviadas: $fotosEnviadas",
+            style: const TextStyle(fontSize: 16, color: Colors.green),
           ),
 
           const SizedBox(height: 8),
@@ -159,9 +218,14 @@ class RegisterFacePageState extends State<RegisterFacePage> {
               ElevatedButton.icon(
                 icon: const Icon(Icons.camera),
                 onPressed: isCapturing ? null : capturarMultiplesFotos,
-                label: Text(isCapturing ? "Capturando…" : "Registrar 300 fotos"),
+                label: Text(
+                  isCapturing ? "Capturando…" : "Registrar 300 fotos",
+                ),
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 14,
+                  ),
                 ),
               ),
               if (isCapturing) ...[
@@ -172,7 +236,10 @@ class RegisterFacePageState extends State<RegisterFacePage> {
                   label: const Text("Detener"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 14,
+                    ),
                   ),
                 ),
               ],
@@ -187,7 +254,7 @@ class RegisterFacePageState extends State<RegisterFacePage> {
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 }

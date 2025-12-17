@@ -1,3 +1,4 @@
+//atendancelistpage.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -16,8 +17,10 @@ class AttendanceListPage extends StatefulWidget {
 
 class _AttendanceListPageState extends State<AttendanceListPage> {
   final DateFormat _isoFormat = DateFormat("yyyy-MM-dd");
-  final DateFormat _legacyFormat =
-      DateFormat("EEE MMM d HH:mm:ss yyyy", "en_US");
+  final DateFormat _legacyFormat = DateFormat(
+    "EEE MMM d HH:mm:ss yyyy",
+    "en_US",
+  );
 
   // ===============================
   // PARSEO SEGURO DE FECHAS
@@ -46,8 +49,10 @@ class _AttendanceListPageState extends State<AttendanceListPage> {
   // VER CALENDARIO (LECTURA)
   // ===============================
   void _verCalendario(BuildContext context, List<String> fechas) {
-    final Set<DateTime> dias =
-        fechas.map(_parseFecha).whereType<DateTime>().toSet();
+    final Set<DateTime> dias = fechas
+        .map(_parseFecha)
+        .whereType<DateTime>()
+        .toSet();
 
     showDialog(
       context: context,
@@ -90,7 +95,7 @@ class _AttendanceListPageState extends State<AttendanceListPage> {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text("Cerrar"),
-          )
+          ),
         ],
       ),
     );
@@ -118,11 +123,11 @@ class _AttendanceListPageState extends State<AttendanceListPage> {
           ElevatedButton(
             onPressed: () {
               context.read<AttendanceBloc>().add(
-                    UpdatePersonNameEvent(
-                      oldName: nombreActual,
-                      newName: controller.text.trim(),
-                    ),
-                  );
+                UpdatePersonNameEvent(
+                  oldName: nombreActual,
+                  newName: controller.text.trim(),
+                ),
+              );
               Navigator.pop(context);
             },
             child: const Text("Guardar"),
@@ -140,8 +145,10 @@ class _AttendanceListPageState extends State<AttendanceListPage> {
     String persona,
     List<String> fechas,
   ) {
-    final Set<DateTime> seleccionadas =
-        fechas.map(_parseFecha).whereType<DateTime>().toSet();
+    final Set<DateTime> seleccionadas = fechas
+        .map(_parseFecha)
+        .whereType<DateTime>()
+        .toSet();
 
     showDialog(
       context: parentContext,
@@ -175,13 +182,13 @@ class _AttendanceListPageState extends State<AttendanceListPage> {
             ElevatedButton(
               onPressed: () {
                 parentContext.read<AttendanceBloc>().add(
-                      UpdateAttendanceEvent(
-                        persona: persona,
-                        fechas: seleccionadas
-                            .map((d) => _isoFormat.format(d))
-                            .toList(),
-                      ),
-                    );
+                  UpdateAttendanceEvent(
+                    persona: persona,
+                    fechas: seleccionadas
+                        .map((d) => _isoFormat.format(d))
+                        .toList(),
+                  ),
+                );
                 Navigator.pop(parentContext);
               },
               child: const Text("Guardar"),
@@ -210,8 +217,8 @@ class _AttendanceListPageState extends State<AttendanceListPage> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () {
               context.read<AttendanceBloc>().add(
-                    DeletePersonEvent(persona: persona),
-                  );
+                DeletePersonEvent(persona: persona),
+              );
               Navigator.pop(context);
             },
             child: const Text("Eliminar"),
@@ -256,49 +263,51 @@ class _AttendanceListPageState extends State<AttendanceListPage> {
                   final index = entry.key;
                   final item = entry.value;
                   final persona = item["persona"] as String;
-                  final fechas =
-                      (item["fechas"] as List<dynamic>).cast<String>();
+                  final fechas = (item["fechas"] as List<dynamic>)
+                      .cast<String>();
 
-                  return DataRow(cells: [
-                    DataCell(Text('${index + 1}')),
-                    DataCell(Text(persona)),
-                    DataCell(
-                      IconButton(
-                        icon: const Icon(Icons.calendar_month),
-                        onPressed: fechas.isEmpty
-                            ? null
-                            : () => _verCalendario(context, fechas),
+                  return DataRow(
+                    cells: [
+                      DataCell(Text('${index + 1}')),
+                      DataCell(Text(persona)),
+                      DataCell(
+                        IconButton(
+                          icon: const Icon(Icons.calendar_month),
+                          onPressed: fechas.isEmpty
+                              ? null
+                              : () => _verCalendario(context, fechas),
+                        ),
                       ),
-                    ),
-                    DataCell(Chip(label: Text(fechas.length.toString()))),
-                    DataCell(
-                      PopupMenuButton<String>(
-                        onSelected: (value) {
-                          if (value == "editar") {
-                            _editarNombre(context, persona);
-                          } else if (value == "asistencia") {
-                            _editarAsistencias(context, persona, fechas);
-                          } else if (value == "eliminar") {
-                            _eliminarPersona(context, persona);
-                          }
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(
-                            value: "editar",
-                            child: Text("Editar nombre"),
-                          ),
-                          PopupMenuItem(
-                            value: "asistencia",
-                            child: Text("Editar asistencias"),
-                          ),
-                          PopupMenuItem(
-                            value: "eliminar",
-                            child: Text("Eliminar"),
-                          ),
-                        ],
+                      DataCell(Chip(label: Text(fechas.length.toString()))),
+                      DataCell(
+                        PopupMenuButton<String>(
+                          onSelected: (value) {
+                            if (value == "editar") {
+                              _editarNombre(context, persona);
+                            } else if (value == "asistencia") {
+                              _editarAsistencias(context, persona, fechas);
+                            } else if (value == "eliminar") {
+                              _eliminarPersona(context, persona);
+                            }
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                              value: "editar",
+                              child: Text("Editar nombre"),
+                            ),
+                            PopupMenuItem(
+                              value: "asistencia",
+                              child: Text("Editar asistencias"),
+                            ),
+                            PopupMenuItem(
+                              value: "eliminar",
+                              child: Text("Eliminar"),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ]);
+                    ],
+                  );
                 }).toList(),
               ),
             );

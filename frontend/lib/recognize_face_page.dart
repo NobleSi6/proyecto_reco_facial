@@ -1,11 +1,12 @@
+// lib/recognize_face_page.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'config/api_config.dart'; // ← Importa la configuración
 
 class RecognizeFacePage extends StatefulWidget {
   const RecognizeFacePage({super.key});
@@ -25,18 +26,10 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
   List<String> personasRegistradas = [];
   Map<String, String> estadoPersonas = {};
 
-  // URLs
-  final String reconocerUrl = kIsWeb
-      ? "http://127.0.0.1:8000/reconocer"
-      : "http://10.0.2.2:8000/reconocer";
-
-  final String personasUrl = kIsWeb
-      ? "http://127.0.0.1:8000/personas"
-      : "http://10.0.2.2:8000/personas";
-
   @override
   void initState() {
     super.initState();
+    ApiConfig.printConfig(); // Debug
     initCamera();
     cargarPersonas();
   }
@@ -55,7 +48,7 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
     try {
       final response = await http
           .get(
-            Uri.parse(personasUrl),
+            Uri.parse(ApiConfig.personasUrl),
             headers: {'Content-Type': 'application/json'},
           )
           .timeout(const Duration(seconds: 10));
@@ -76,7 +69,7 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
         _showSnack("Error del servidor: ${response.statusCode}");
       }
     } catch (e) {
-      _showSnack("Error al cargar personas");
+      _showSnack("Error al cargar personas: $e");
     }
   }
 
@@ -92,7 +85,7 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
         return;
       }
 
-      // 👉 Usa cámara frontal si existe
+      // Usa cámara frontal si existe
       final cameraIndex = cameras!.length > 1 ? 1 : 0;
 
       controller = CameraController(
@@ -112,7 +105,7 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
       );
     } catch (e) {
       if (mounted) {
-        setState(() => recognizedName = "Error al iniciar cámara");
+        setState(() => recognizedName = "Error al iniciar cámara: $e");
       }
     }
   }
@@ -121,9 +114,8 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
   //   Captura y reconocimiento
   // ========================
   Future<void> captureAndRecognize() async {
-    if (controller == null ||
-        !controller!.value.isInitialized ||
-        isProcessing) return;
+    if (controller == null || !controller!.value.isInitialized || isProcessing)
+      return;
 
     setState(() => isProcessing = true);
 
@@ -133,7 +125,7 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
 
       final request = http.MultipartRequest(
         "POST",
-        Uri.parse(reconocerUrl),
+        Uri.parse(ApiConfig.reconocerUrl),
       );
 
       request.files.add(
@@ -145,8 +137,9 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
         ),
       );
 
-      final response =
-          await request.send().timeout(const Duration(seconds: 15));
+      final response = await request.send().timeout(
+        const Duration(seconds: 15),
+      );
 
       if (response.statusCode == 200) {
         final body = await response.stream.bytesToString();
@@ -159,8 +152,7 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
         setState(() {
           recognizedName = nombre;
 
-          if (personasRegistradas.contains(nombre) &&
-              nombre != "Desconocido") {
+          if (personasRegistradas.contains(nombre) && nombre != "Desconocido") {
             estadoPersonas[nombre] = "Presente";
           }
         });
@@ -171,7 +163,7 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => recognizedName = "Error de reconocimiento");
+        setState(() => recognizedName = "Error: $e");
       }
     }
 
@@ -182,8 +174,7 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
 
   void _showSnack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   // ========================
@@ -286,8 +277,7 @@ class RecognizeFacePageState extends State<RecognizeFacePage> {
                                 ),
                                 title: Text(
                                   persona,
-                                  style:
-                                      const TextStyle(color: Colors.white),
+                                  style: const TextStyle(color: Colors.white),
                                 ),
                                 trailing: Text(
                                   estado,

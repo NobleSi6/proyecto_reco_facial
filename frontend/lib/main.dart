@@ -1,3 +1,4 @@
+//main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -32,27 +33,18 @@ class MainMenuPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        centerTitle: true,
-      ),
+      appBar: AppBar(centerTitle: true),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.face,
-                size: 80,
-                color: Colors.blue,
-              ),
+              const Icon(Icons.face, size: 80, color: Colors.blue),
               const SizedBox(height: 16),
               const Text(
                 "Sistema de Asistencias",
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 48),
 
@@ -82,9 +74,7 @@ class MainMenuPage extends StatelessWidget {
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => const RegisterFacePage(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const RegisterFacePage()),
                   );
                 },
               ),
@@ -128,10 +118,7 @@ class MainMenuPage extends StatelessWidget {
       child: ElevatedButton.icon(
         onPressed: onPressed,
         icon: Icon(icon, size: 28),
-        label: Text(
-          label,
-          style: const TextStyle(fontSize: 16),
-        ),
+        label: Text(label, style: const TextStyle(fontSize: 16)),
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
           foregroundColor: Colors.white,
